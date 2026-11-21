@@ -104,6 +104,8 @@ jobs:
           EXTRA=()
           case "$VARIANT" in
             onone) EXTRA=(SWIFT_OPTIMIZATION_LEVEL=-Onone) ;;
+            inliner-off2) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-inline -Xllvm -sil-disable-pass=EarlyPerfInliner') ;;
+            silopt-off) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sil-perf-optzns') ;;
             *)     EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-perf-inline') ;;
           esac
           echo "variant=$VARIANT extra=${EXTRA[*]}"
