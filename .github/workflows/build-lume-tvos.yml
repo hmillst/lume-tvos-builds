@@ -12,9 +12,9 @@ on:
         required: false
         default: ""
       variant:
-        description: "Compiler workaround: inliner-off (publish) | onone (test, artifact only)"
+        description: "Compiler workaround: silopt-off (default, publishes) | onone | inliner-off | inliner-off2 (tests, artifact only)"
         required: false
-        default: "inliner-off"
+        default: "silopt-off"
   schedule:
     - cron: "0 20 * * 5" # weekly, Friday 20:00 UTC
 
@@ -106,7 +106,7 @@ jobs:
             onone) EXTRA=(SWIFT_OPTIMIZATION_LEVEL=-Onone) ;;
             inliner-off2) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-inline -Xllvm -sil-disable-pass=EarlyPerfInliner') ;;
             silopt-off) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sil-perf-optzns') ;;
-            *)     EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-perf-inline') ;;
+            *)     EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sil-perf-optzns') ;;
           esac
           echo "variant=$VARIANT extra=${EXTRA[*]}"
           if ! xcodebuild \
@@ -130,7 +130,7 @@ jobs:
         if: always() && steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log-${{ inputs.variant || 'inliner-off' }}
+          name: xcodebuild-log-${{ inputs.variant || 'silopt-off' }}
           path: xcodebuild.log
           if-no-files-found: ignore
 
@@ -148,11 +148,11 @@ jobs:
         if: steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Lume-tvOS-${{ inputs.variant || 'inliner-off' }}
+          name: Lume-tvOS-${{ inputs.variant || 'silopt-off' }}
           path: Lume-tvOS.ipa
 
       - name: Publish release
-        if: steps.ver.outputs.skip != 'true' && (inputs.variant == '' || inputs.variant == 'inliner-off')
+        if: steps.ver.outputs.skip != 'true' && (inputs.variant == '' || inputs.variant == 'silopt-off')
         run: |
           gh release create "lume-${{ steps.ver.outputs.tag }}" Lume-tvOS.ipa \
             -R "${{ github.repository }}" \
