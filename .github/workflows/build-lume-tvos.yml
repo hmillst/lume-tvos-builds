@@ -69,11 +69,16 @@ jobs:
           repository: bilipp/LumeCloud
           path: LumeCloud
 
-      - name: Select newest Xcode 26
+      - name: Select Xcode 26.4
         if: steps.ver.outputs.skip != 'true'
         run: |
           ls /Applications | grep -i '^Xcode' || true
-          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          # Lume requires Xcode 26.4+. Xcode 26.6's Swift 6.3.3 compiler crashes
+          # in the SIL optimizer on Lume, so pin 26.4 (fall back to 26.5).
+          XC=""
+          for v in 26.4.1 26.4 26.5; do
+            if [ -d "/Applications/Xcode_$v.app" ]; then XC="/Applications/Xcode_$v.app"; break; fi
+          done
           [ -n "$XC" ] && sudo xcode-select -s "$XC"
           xcodebuild -version
 
