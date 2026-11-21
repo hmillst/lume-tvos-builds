@@ -1,0 +1,102 @@
+name: Build Lume tvOS IPA
+
+# Builds an unsigned tvOS IPA of bilipp/Lume using its "Sideload" build
+# configuration (SIDE_LOAD flag: every feature unlocked, no StoreKit), then
+# publishes it as a release in THIS repo so ATV Loadly can track it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Lume release tag to build (blank = latest)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 20 * * 5" # weekly, Friday 20:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve Lume tag
+        id: ver
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh api repos/bilipp/Lume/releases/latest --jq .tag_name)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "lume-$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Already built $TAG, nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out Lume
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: bilipp/Lume
+          ref: ${{ steps.ver.outputs.tag }}
+          path: Lume
+
+      # Lume references LumeEngine as a local package at ../LumeEngine.
+      # Its Package.swift downloads the prebuilt FFmpeg xcframework itself.
+      - name: Check out LumeEngine
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: bilipp/LumeEngine
+          path: LumeEngine
+
+      - name: Select newest Xcode 26
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          ls /Applications | grep -i '^Xcode' || true
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Ensure tvOS SDK is installed
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          xcodebuild -showsdks | grep -i appletvos || sudo xcodebuild -downloadPlatform tvOS
+          xcodebuild -showsdks | grep -i appletvos
+
+      - name: Build (Sideload configuration, unsigned)
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: Lume
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Lume.xcodeproj \
+            -scheme Lume \
+            -configuration Sideload \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath build \
+            -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 60
+
+      - name: Package IPA
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          APP=$(find Lume/build/Build/Products -maxdepth 2 -name '*.app' -path '*appletvos*' | head -1)
+          echo "App: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Lume-tvOS.ipa Payload
+          ls -lh Lume-tvOS.ipa
+
+      - name: Publish release
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          gh release create "lume-${{ steps.ver.outputs.tag }}" Lume-tvOS.ipa \
+            -R "${{ github.repository }}" \
+            --title "Lume ${{ steps.ver.outputs.tag }} (tvOS, Sideload build)" \
+            --notes "Unsigned tvOS IPA built from bilipp/Lume ${{ steps.ver.outputs.tag }} with the Sideload configuration."
