@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: ${{ inputs.variant == 'xcode27' && 'xcode-27' || 'macos-26' }}
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
@@ -80,11 +80,20 @@ jobs:
           # Lume requires Xcode 26.4+. Xcode 26.6's Swift 6.3.3 compiler crashes
           # in the SIL optimizer on Lume, so pin 26.4 (fall back to 26.5).
           XC=""
-          for v in 26.4.1 26.4 26.5; do
-            if [ -d "/Applications/Xcode_$v.app" ]; then XC="/Applications/Xcode_$v.app"; break; fi
-          done
+          if [ "${{ inputs.variant }}" = "xcode27" ]; then
+            # The author archives with Xcode 27; use the newest 27.x on the xcode-27 image.
+            XC=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          else
+            for v in 26.4.1 26.4 26.5; do
+              if [ -d "/Applications/Xcode_$v.app" ]; then XC="/Applications/Xcode_$v.app"; break; fi
+            done
+          fi
           [ -n "$XC" ] && sudo xcode-select -s "$XC"
           xcodebuild -version
+          # Newer Xcodes no longer bundle the Metal toolchain (needed by KSPlayer).
+          if [ "${{ inputs.variant }}" = "xcode27" ]; then
+            xcodebuild -downloadComponent MetalToolchain || true
+          fi
 
       - name: Ensure tvOS SDK is installed
         if: steps.ver.outputs.skip != 'true'
@@ -103,6 +112,7 @@ jobs:
           VARIANT="${{ inputs.variant }}"
           EXTRA=()
           case "$VARIANT" in
+            xcode27) EXTRA=() ;; # full optimization, no workaround
             onone) EXTRA=(SWIFT_OPTIMIZATION_LEVEL=-Onone) ;;
             inliner-off2) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-inline -Xllvm -sil-disable-pass=EarlyPerfInliner') ;;
             silopt-off) EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sil-perf-optzns') ;;
