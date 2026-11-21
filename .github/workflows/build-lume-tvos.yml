@@ -54,6 +54,21 @@ jobs:
           repository: bilipp/LumeEngine
           path: LumeEngine
 
+      # More local packages referenced as ../LumeRecorder/Kit and ../LumeCloud/LumeCloudKit.
+      - name: Check out LumeRecorder
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: bilipp/LumeRecorder
+          path: LumeRecorder
+
+      - name: Check out LumeCloud
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: bilipp/LumeCloud
+          path: LumeCloud
+
       - name: Select newest Xcode 26
         if: steps.ver.outputs.skip != 'true'
         run: |
