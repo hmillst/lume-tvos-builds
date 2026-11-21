@@ -12,9 +12,9 @@ on:
         required: false
         default: ""
       variant:
-        description: "Compiler workaround: silopt-off (default, publishes) | onone | inliner-off | inliner-off2 (tests, artifact only)"
+        description: "Compiler workaround: xcode27 (default, publishes) | silopt-off | onone | inliner-off | inliner-off2 (tests, artifact only)"
         required: false
-        default: "silopt-off"
+        default: "xcode27"
   schedule:
     - cron: "0 20 * * 5" # weekly, Friday 20:00 UTC
 
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ inputs.variant == 'xcode27' && 'xcode-27' || 'macos-26' }}
+    runs-on: ${{ (inputs.variant || 'xcode27') == 'xcode27' && 'xcode-27' || 'macos-26' }}
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
@@ -36,8 +36,8 @@ jobs:
             TAG=$(gh api repos/bilipp/Lume/releases/latest --jq .tag_name)
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          V="${{ inputs.variant }}"
-          if { [ -z "$V" ] || [ "$V" = "silopt-off" ]; } && gh release view "lume-$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
+          V="${{ inputs.variant || 'xcode27' }}"
+          if [ "$V" = "xcode27" ] && gh release view "lume-$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Already built $TAG, nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
@@ -81,7 +81,7 @@ jobs:
           # Lume requires Xcode 26.4+. Xcode 26.6's Swift 6.3.3 compiler crashes
           # in the SIL optimizer on Lume, so pin 26.4 (fall back to 26.5).
           XC=""
-          if [ "${{ inputs.variant }}" = "xcode27" ]; then
+          if [ "${{ inputs.variant || 'xcode27' }}" = "xcode27" ]; then
             # The author archives with Xcode 27; use the newest 27.x on the xcode-27 image.
             XC=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
           else
@@ -92,7 +92,7 @@ jobs:
           [ -n "$XC" ] && sudo xcode-select -s "$XC"
           xcodebuild -version
           # Newer Xcodes no longer bundle the Metal toolchain (needed by KSPlayer).
-          if [ "${{ inputs.variant }}" = "xcode27" ]; then
+          if [ "${{ inputs.variant || 'xcode27' }}" = "xcode27" ]; then
             xcodebuild -downloadComponent MetalToolchain || true
           fi
 
@@ -110,7 +110,7 @@ jobs:
           # print just the errors and the tail so the cause is visible.
           # Swift 6.x crashes in the SIL optimizer (EarlyPerfInliner) on
           # HueSourceRouter.deinit. Two workarounds, chosen by `variant`.
-          VARIANT="${{ inputs.variant }}"
+          VARIANT="${{ inputs.variant || 'xcode27' }}"
           EXTRA=()
           case "$VARIANT" in
             xcode27) EXTRA=() ;; # full optimization, no workaround
@@ -141,7 +141,7 @@ jobs:
         if: always() && steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log-${{ inputs.variant || 'silopt-off' }}
+          name: xcodebuild-log-${{ inputs.variant || 'xcode27' }}
           path: xcodebuild.log
           if-no-files-found: ignore
 
@@ -159,11 +159,11 @@ jobs:
         if: steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Lume-tvOS-${{ inputs.variant || 'silopt-off' }}
+          name: Lume-tvOS-${{ inputs.variant || 'xcode27' }}
           path: Lume-tvOS.ipa
 
       - name: Publish release
-        if: steps.ver.outputs.skip != 'true' && (inputs.variant == '' || inputs.variant == 'silopt-off')
+        if: steps.ver.outputs.skip != 'true' && (inputs.variant || 'xcode27') == 'xcode27'
         run: |
           gh release create "lume-${{ steps.ver.outputs.tag }}" Lume-tvOS.ipa \
             -R "${{ github.repository }}" \
