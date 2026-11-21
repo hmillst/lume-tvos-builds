@@ -87,8 +87,9 @@ jobs:
         if: steps.ver.outputs.skip != 'true'
         working-directory: Lume
         run: |
-          set -o pipefail
-          xcodebuild \
+          # Full output goes to a file (GitHub truncates huge logs); on failure
+          # print just the errors and the tail so the cause is visible.
+          if ! xcodebuild \
             -project Lume.xcodeproj \
             -scheme Lume \
             -configuration Sideload \
@@ -96,7 +97,21 @@ jobs:
             -derivedDataPath build \
             -skipMacroValidation -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build 2>&1 | grep -vE "^\s*$"
+            build > ../xcodebuild.log 2>&1; then
+            echo "===== ERRORS ====="
+            grep -nE 'error:|fatal error|BUILD FAILED|The following build commands failed' ../xcodebuild.log | cut -c1-600 | head -60
+            echo "===== LAST 60 LINES ====="
+            tail -n 60 ../xcodebuild.log | cut -c1-600
+            exit 1
+          fi
+
+      - name: Upload build log
+        if: always() && steps.ver.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Package IPA
         if: steps.ver.outputs.skip != 'true'
