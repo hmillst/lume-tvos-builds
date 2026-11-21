@@ -11,6 +11,10 @@ on:
         description: "Lume release tag to build (blank = latest)"
         required: false
         default: ""
+      variant:
+        description: "Compiler workaround: inliner-off (publish) | onone (test, artifact only)"
+        required: false
+        default: "inliner-off"
   schedule:
     - cron: "0 20 * * 5" # weekly, Friday 20:00 UTC
 
@@ -94,6 +98,15 @@ jobs:
         run: |
           # Full output goes to a file (GitHub truncates huge logs); on failure
           # print just the errors and the tail so the cause is visible.
+          # Swift 6.x crashes in the SIL optimizer (EarlyPerfInliner) on
+          # HueSourceRouter.deinit. Two workarounds, chosen by `variant`.
+          VARIANT="${{ inputs.variant }}"
+          EXTRA=()
+          case "$VARIANT" in
+            onone) EXTRA=(SWIFT_OPTIMIZATION_LEVEL=-Onone) ;;
+            *)     EXTRA=('OTHER_SWIFT_FLAGS=$(inherited) -Xllvm -sil-disable-pass=early-perf-inline') ;;
+          esac
+          echo "variant=$VARIANT extra=${EXTRA[*]}"
           if ! xcodebuild \
             -project Lume.xcodeproj \
             -scheme Lume \
@@ -102,6 +115,7 @@ jobs:
             -derivedDataPath build \
             -skipMacroValidation -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            "${EXTRA[@]}" \
             build > ../xcodebuild.log 2>&1; then
             echo "===== ERRORS ====="
             grep -nE 'error:|fatal error|BUILD FAILED|The following build commands failed' ../xcodebuild.log | cut -c1-600 | head -60
@@ -114,7 +128,7 @@ jobs:
         if: always() && steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: xcodebuild-log
+          name: xcodebuild-log-${{ inputs.variant || 'inliner-off' }}
           path: xcodebuild.log
           if-no-files-found: ignore
 
@@ -128,8 +142,15 @@ jobs:
           zip -qry Lume-tvOS.ipa Payload
           ls -lh Lume-tvOS.ipa
 
-      - name: Publish release
+      - name: Upload IPA artifact
         if: steps.ver.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lume-tvOS-${{ inputs.variant || 'inliner-off' }}
+          path: Lume-tvOS.ipa
+
+      - name: Publish release
+        if: steps.ver.outputs.skip != 'true' && (inputs.variant == '' || inputs.variant == 'inliner-off')
         run: |
           gh release create "lume-${{ steps.ver.outputs.tag }}" Lume-tvOS.ipa \
             -R "${{ github.repository }}" \
