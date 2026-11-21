@@ -36,7 +36,8 @@ jobs:
             TAG=$(gh api repos/bilipp/Lume/releases/latest --jq .tag_name)
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if gh release view "lume-$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
+          V="${{ inputs.variant }}"
+          if { [ -z "$V" ] || [ "$V" = "silopt-off" ]; } && gh release view "lume-$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Already built $TAG, nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
